@@ -1,0 +1,15 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+
+# Splunk local runtime / secrets
+splunk_app/*/local/passwords.conf
+splunk_app/*/local/server.conf
+splunk_app/*/local/web.conf
+splunk_app/*/local/user-prefs.conf

@@ -1,0 +1,4 @@
+agent_id,owner,registered_agent,approved_access_path,allowed_indexes,allowed_tools,max_risk
+security-triage-agent,security-team,true,mcp,"auth;endpoint;security_alerts","splunk_search;create_summary;open_incident",medium
+sre-remediation-agent,sre-team,true,mcp,"app_logs;infra_metrics;endpoint","splunk_search;restart_pod;create_ticket",high
+productivity-copilot-local,unknown,false,direct_token,"none","unknown",critical

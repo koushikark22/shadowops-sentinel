@@ -1,0 +1,2 @@
+# ShadowOps Sentinel uses only Python standard library for the generator.
+# Add optional packages below if you later integrate Splunk SDK or an LLM provider.

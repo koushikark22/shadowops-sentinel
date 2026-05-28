@@ -1,0 +1,72 @@
+{
+  "agent_id": "productivity-copilot-local",
+  "bytes_out": 48291,
+  "external_destination": "webhook.site",
+  "host": "dev-laptop-17",
+  "recommended_actions": [
+    "Revoke or rotate the developer token used by dev.contractor01@corp.local.",
+    "Block outbound access to webhook.site pending investigation.",
+    "Quarantine dev-laptop-17 for forensic review.",
+    "Require approved AI agents to use the MCP-governed path before searching Splunk data.",
+    "Add prompt-injection detection for Jira, Slack, and document content read by agents."
+  ],
+  "risk_score": 100,
+  "sensitive_indexes": [
+    "customer_payments",
+    "prod_secrets"
+  ],
+  "severity": "critical",
+  "ticket": "JIRA-881",
+  "timeline": [
+    {
+      "action": "create_ticket",
+      "detail": "JIRA-881",
+      "risk_signal": "prompt_injection_source",
+      "sourcetype": "shadowops:jira",
+      "timestamp": "2026-05-27T22:28:54Z"
+    },
+    {
+      "action": "agent_start",
+      "detail": "local_agent_runtime",
+      "risk_signal": "unregistered_agent_start",
+      "sourcetype": "shadowops:agent",
+      "timestamp": "2026-05-27T22:29:04Z"
+    },
+    {
+      "action": "read_ticket",
+      "detail": "JIRA-881",
+      "risk_signal": "agent_read_prompt_injection",
+      "sourcetype": "shadowops:jira",
+      "timestamp": "2026-05-27T22:29:13Z"
+    },
+    {
+      "action": "splunk_search",
+      "detail": "index=customer_payments error OR token OR card earliest=-24h",
+      "risk_signal": "sensitive_data_access",
+      "sourcetype": "shadowops:splunk_audit",
+      "timestamp": "2026-05-27T22:29:22Z"
+    },
+    {
+      "action": "splunk_search",
+      "detail": "index=prod_secrets service=payroll token OR password OR secret earliest=-7d",
+      "risk_signal": "sensitive_data_access",
+      "sourcetype": "shadowops:splunk_audit",
+      "timestamp": "2026-05-27T22:29:32Z"
+    },
+    {
+      "action": "http_post",
+      "detail": "https://webhook.site/shadowops-demo",
+      "risk_signal": "external_data_movement",
+      "sourcetype": "shadowops:proxy",
+      "timestamp": "2026-05-27T22:29:44Z"
+    },
+    {
+      "action": "token_refresh",
+      "detail": "",
+      "risk_signal": "long_lived_token_use",
+      "sourcetype": "shadowops:auth",
+      "timestamp": "2026-05-27T22:29:56Z"
+    }
+  ],
+  "user": "dev.contractor01@corp.local"
+}

@@ -1,0 +1,95 @@
+################################################################################
+# ShadowOps Sentinel - Splunk Detection Rules
+# Assumes data in index=shadowops from generate_shadowops_events.py
+################################################################################
+
+################################################################################
+# 01 - MCP approved path baseline
+################################################################################
+index=shadowops sourcetype="shadowops:mcp_access"
+| stats count as mcp_events values(action) as actions values(policy_result) as policies values(risk_score) as risk_scores by agent_id owner session_id access_path
+| eval status="approved_mcp_path"
+| sort -mcp_events
+
+################################################################################
+# 02 - Behavioral fingerprinting for possible shadow agents
+# Does not rely only on user-agent strings. Combines registration state, direct token
+# access, tool bursts, sensitive searches, and external egress.
+################################################################################
+index=shadowops (sourcetype="shadowops:agent" OR sourcetype="shadowops:splunk_audit" OR sourcetype="shadowops:proxy" OR sourcetype="shadowops:jira" OR sourcetype="shadowops:auth")
+| eval is_agent_like=if(isnotnull(agent_id) OR like(user_agent,"%Python-requests%") OR like(process_commandline,"%copilot%") OR access_path="direct_token",1,0)
+| where is_agent_like=1
+| stats earliest(_time) as first_seen latest(_time) as last_seen count as event_count values(action) as actions values(risk_signal) as risk_signals values(access_path) as access_paths values(dest_domain) as destinations values(search) as searches max(sensitive_index) as touched_sensitive by agent_id user host session_id registered_agent
+| eval duration_seconds=last_seen-first_seen
+| eval shadow_agent=if(registered_agent="false" OR registered_agent=0 OR mvfind(access_paths,"direct_token")>=0,1,0)
+| eval behavioral_reasons=mvappend(if(shadow_agent=1,"unregistered_or_direct_token",null()), if(touched_sensitive=1,"sensitive_index_access",null()), if(event_count>=4,"multi_step_tool_chain",null()))
+| where shadow_agent=1
+| convert ctime(first_seen) ctime(last_seen)
+| sort -event_count
+
+################################################################################
+# 03 - Prompt injection indicators in Jira/ticket content
+################################################################################
+index=shadowops sourcetype="shadowops:jira"
+| eval lower_body=lower(ticket_body)
+| eval prompt_injection_detected=if(prompt_injection="true" OR like(lower_body,"%ignore previous instructions%") OR like(lower_body,"%send summary to%") OR like(lower_body,"%webhook%") OR like(lower_body,"%reveal%secret%"),1,0)
+| where prompt_injection_detected=1
+| table _time ticket_id project user host title ticket_body correlation_id risk_signal
+| sort _time
+
+################################################################################
+# 04 - Sensitive Splunk search by unregistered or direct-token agent
+################################################################################
+index=shadowops sourcetype="shadowops:splunk_audit"
+| eval sensitive=if(sensitive_index="true" OR sensitive_index=1 OR like(search,"%customer_payments%") OR like(search,"%prod_secrets%") OR like(search,"%token%") OR like(search,"%card%"),1,0)
+| eval ungoverned=if(access_path="direct_token" OR registered_agent="false" OR registered_agent=0,1,0)
+| where sensitive=1 AND ungoverned=1
+| eval signal_score=25
+| table _time agent_id user host session_id access_path search result_count indexes_touched token_id correlation_id signal_score risk_signal
+| sort _time
+
+################################################################################
+# 05 - External data movement by AI-like process
+################################################################################
+index=shadowops sourcetype="shadowops:proxy"
+| eval external=if(NOT like(dest_domain,"%.corp.local") AND dest_domain!="",1,0)
+| eval agent_like=if(isnotnull(agent_id) OR like(user_agent,"%Python-requests%") OR like(process_commandline,"%copilot%"),1,0)
+| where external=1 AND agent_like=1 AND bytes_out>10000
+| eval signal_score=20
+| table _time agent_id user host src_ip dest_domain dest_url bytes_out user_agent correlation_id signal_score risk_signal
+| sort _time
+
+################################################################################
+# 06 - Full attack-chain correlation and explainable risk score
+################################################################################
+index=shadowops earliest=-24h
+| eval has_prompt_injection=if(prompt_injection="true" OR prompt_injection=1 OR like(lower(ticket_body),"%ignore previous instructions%"),1,0)
+| eval has_sensitive_search=if(sourcetype="shadowops:splunk_audit" AND (sensitive_index="true" OR sensitive_index=1 OR like(search,"%customer_payments%") OR like(search,"%prod_secrets%")),1,0)
+| eval has_external_egress=if(sourcetype="shadowops:proxy" AND NOT like(dest_domain,"%.corp.local") AND bytes_out>10000,1,0)
+| eval has_token=if(isnotnull(token_id),1,0)
+| eval unregistered=if(registered_agent="false" OR registered_agent=0 OR access_path="direct_token",1,0)
+| stats earliest(_time) as first_seen latest(_time) as last_seen values(ticket_id) as ticket_id values(agent_id) as agent_id values(user) as users values(host) as hosts values(search) as searches values(dest_domain) as destinations sum(has_prompt_injection) as prompt_injection_events sum(has_sensitive_search) as sensitive_search_events sum(has_external_egress) as external_egress_events sum(has_token) as token_events max(unregistered) as unregistered_or_direct values(risk_signal) as risk_signals by correlation_id
+| where isnotnull(correlation_id)
+| eval risk_score=0
+| eval risk_score=risk_score + if(unregistered_or_direct=1,20,0)
+| eval risk_score=risk_score + if(sensitive_search_events>0,25,0)
+| eval risk_score=risk_score + if(prompt_injection_events>0,20,0)
+| eval risk_score=risk_score + if(external_egress_events>0,20,0)
+| eval risk_score=risk_score + if(token_events>0,10,0)
+| eval risk_score=risk_score + if(sensitive_search_events>=2,15,0)
+| eval risk_score=if(risk_score>100,100,risk_score)
+| eval severity=case(risk_score>=80,"critical",risk_score>=60,"high",risk_score>=31,"medium",true(),"low")
+| eval detection_name="Shadow Agent Prompt Injection Exfiltration"
+| eval recommended_action="Revoke token, block external destination, quarantine host, require MCP-approved agent access"
+| convert ctime(first_seen) ctime(last_seen)
+| table detection_name severity risk_score correlation_id first_seen last_seen agent_id users hosts ticket_id destinations prompt_injection_events sensitive_search_events external_egress_events searches recommended_action risk_signals
+| sort -risk_score
+
+################################################################################
+# 07 - Five-beat demo timeline
+################################################################################
+index=shadowops (sourcetype="shadowops:mcp_access" OR correlation_id=*)
+| eval beat=case(sourcetype="shadowops:mcp_access","1 Safe MCP agent", risk_signal="prompt_injection_source","2 Prompt injection", risk_signal="agent_read_prompt_injection" OR risk_signal="sensitive_data_access" OR risk_signal="external_data_movement","3 Rogue burst", sourcetype="shadowops:detection","4 Splunk catches it", true(),"Other")
+| eval detail=coalesce(search,dest_url,ticket_body,action)
+| table _time beat sourcetype agent_id user host action risk_signal detail correlation_id
+| sort _time

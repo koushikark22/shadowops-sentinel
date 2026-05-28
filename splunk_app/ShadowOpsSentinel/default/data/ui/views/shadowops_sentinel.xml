@@ -1,6 +1,7 @@
 <form version="1.1" theme="dark">
   <label>ShadowOps Sentinel</label>
   <description>Rogue AI agent detection, MCP bypass correlation, prompt-injection chain, and containment evidence.</description>
+
   <fieldset submitButton="false">
     <input type="time" token="time_range">
       <label>Time Range</label>
@@ -10,12 +11,34 @@
       </default>
     </input>
   </fieldset>
+
   <row>
+    <panel>
+      <title>Total ShadowOps Events</title>
+      <single>
+        <search>
+          <query><![CDATA[
+index=shadowops
+| stats count
+          ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="colorMode">block</option>
+      </single>
+    </panel>
+
     <panel>
       <title>Critical Shadow Agent Detections</title>
       <single>
         <search>
-          <query>index=shadowops sourcetype="shadowops:detection" severity="critical" | stats count</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.sourcetype output=real_sourcetype
+| spath path=event.severity output=severity
+| search real_sourcetype="shadowops:detection" severity="critical"
+| stats count
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
@@ -24,47 +47,84 @@
         <option name="rangeValues">[0,1]</option>
       </single>
     </panel>
+
     <panel>
       <title>Approved MCP Agent Sessions</title>
       <single>
         <search>
-          <query>index=shadowops sourcetype="shadowops:mcp_access" | stats dc(session_id) as sessions</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.sourcetype output=real_sourcetype
+| search real_sourcetype="shadowops:mcp_access"
+| spath path=event.session_id output=session_id
+| stats dc(session_id) as sessions
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
       </single>
     </panel>
+
     <panel>
       <title>External Agent Egress Bytes</title>
       <single>
         <search>
-          <query>index=shadowops sourcetype="shadowops:proxy" NOT dest_domain="*.corp.local" | stats sum(bytes_out) as bytes_out</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.sourcetype output=real_sourcetype
+| search real_sourcetype="shadowops:proxy"
+| spath path=event.dest_domain output=dest_domain
+| spath path=event.bytes_out output=bytes_out
+| where NOT like(dest_domain,"%.corp.local")
+| stats sum(bytes_out) as bytes_out
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
       </single>
     </panel>
   </row>
+
   <row>
     <panel>
-      <title>Five-Beat Demo Timeline</title>
-      <table>
+      <title>Logical Source Type Breakdown</title>
+      <chart>
         <search>
-          <query>index=shadowops (sourcetype="shadowops:mcp_access" OR correlation_id=*) | eval beat=case(sourcetype="shadowops:mcp_access","1 Safe MCP agent", risk_signal="prompt_injection_source","2 Prompt injection", risk_signal="agent_read_prompt_injection" OR risk_signal="sensitive_data_access" OR risk_signal="external_data_movement","3 Rogue burst", sourcetype="shadowops:detection","4 Splunk catches it", true(),"Other") | eval detail=coalesce(search,dest_url,ticket_body,action) | table _time beat sourcetype agent_id user host action risk_signal detail correlation_id | sort _time</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.sourcetype output=real_sourcetype
+| stats count by real_sourcetype
+| sort - count
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
-        <option name="count">15</option>
-        <option name="wrap">true</option>
-      </table>
+        <option name="charting.chart">bar</option>
+      </chart>
     </panel>
   </row>
+
   <row>
     <panel>
-      <title>Full Attack Chain Correlation</title>
+      <title>Rogue Agent Detection - High Confidence Finding</title>
       <table>
         <search>
-          <query>index=shadowops earliest=-24h | eval has_prompt_injection=if(prompt_injection="true" OR prompt_injection=1 OR like(lower(ticket_body),"%ignore previous instructions%"),1,0) | eval has_sensitive_search=if(sourcetype="shadowops:splunk_audit" AND (sensitive_index="true" OR sensitive_index=1 OR like(search,"%customer_payments%") OR like(search,"%prod_secrets%")),1,0) | eval has_external_egress=if(sourcetype="shadowops:proxy" AND NOT like(dest_domain,"%.corp.local") AND bytes_out&gt;10000,1,0) | eval has_token=if(isnotnull(token_id),1,0) | eval unregistered=if(registered_agent="false" OR registered_agent=0 OR access_path="direct_token",1,0) | stats earliest(_time) as first_seen latest(_time) as last_seen values(ticket_id) as ticket_id values(agent_id) as agent_id values(user) as users values(host) as hosts values(search) as searches values(dest_domain) as destinations sum(has_prompt_injection) as prompt_injection_events sum(has_sensitive_search) as sensitive_search_events sum(has_external_egress) as external_egress_events sum(has_token) as token_events max(unregistered) as unregistered_or_direct values(risk_signal) as risk_signals by correlation_id | where isnotnull(correlation_id) | eval risk_score=0 | eval risk_score=risk_score + if(unregistered_or_direct=1,20,0) | eval risk_score=risk_score + if(sensitive_search_events&gt;0,25,0) | eval risk_score=risk_score + if(prompt_injection_events&gt;0,20,0) | eval risk_score=risk_score + if(external_egress_events&gt;0,20,0) | eval risk_score=risk_score + if(token_events&gt;0,10,0) | eval risk_score=risk_score + if(sensitive_search_events&gt;=2,15,0) | eval risk_score=if(risk_score&gt;100,100,risk_score) | eval severity=case(risk_score&gt;=80,"critical",risk_score&gt;=60,"high",risk_score&gt;=31,"medium",true(),"low") | convert ctime(first_seen) ctime(last_seen) | table severity risk_score correlation_id first_seen last_seen agent_id users hosts ticket_id destinations prompt_injection_events sensitive_search_events external_egress_events searches risk_signals | sort -risk_score</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.sourcetype output=real_sourcetype
+| search real_sourcetype="shadowops:detection"
+| spath
+| eval detection_name=coalesce('event.detection_name','event.rule_name','event.alert_name','event.alert','event.signature','event.name','event.type')
+| eval severity=coalesce('event.severity','event.risk_level','event.priority')
+| eval risk_score=coalesce('event.risk_score','event.risk','event.score')
+| eval agent_id=coalesce('event.agent_id','event.agent.id','event.agent','event.actor_id','event.principal')
+| eval user=coalesce('event.user','event.username','event.src_user','event.actor','event.identity')
+| eval src=coalesce('event.src','event.src_ip','event.ip','event.client_ip','event.source')
+| eval action=coalesce('event.action','event.activity','event.operation')
+| eval summary=coalesce('event.summary','event.message','event.reason','event.description','event.details')
+| table _time detection_name severity risk_score agent_id user src action summary
+| sort - _time
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
@@ -73,12 +133,124 @@
       </table>
     </panel>
   </row>
+
+  <row>
+    <panel>
+      <title>Five-Beat Demo Timeline</title>
+      <table>
+        <search>
+          <query><![CDATA[
+index=shadowops
+| spath
+| eval real_sourcetype='event.sourcetype'
+| eval correlation_id='event.correlation_id'
+| eval risk_signal='event.risk_signal'
+| eval agent_id='event.agent_id'
+| eval user='event.user'
+| eval host='event.host'
+| eval action='event.action'
+| eval search='event.search'
+| eval dest_url='event.dest_url'
+| eval ticket_body='event.ticket_body'
+| where real_sourcetype="shadowops:mcp_access" OR isnotnull(correlation_id)
+| eval beat=case(
+    real_sourcetype="shadowops:mcp_access","1 Safe MCP agent",
+    risk_signal="prompt_injection_source","2 Prompt injection",
+    risk_signal="agent_read_prompt_injection" OR risk_signal="sensitive_data_access" OR risk_signal="external_data_movement","3 Rogue burst",
+    real_sourcetype="shadowops:detection","4 Splunk catches it",
+    true(),"Other"
+  )
+| eval detail=coalesce(search,dest_url,ticket_body,action)
+| table _time beat real_sourcetype agent_id user host action risk_signal detail correlation_id
+| sort _time
+          ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="count">15</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Full Attack Chain Correlation</title>
+      <table>
+        <search>
+          <query><![CDATA[
+index=shadowops
+| spath
+| eval real_sourcetype='event.sourcetype'
+| eval correlation_id='event.correlation_id'
+| eval prompt_injection='event.prompt_injection'
+| eval ticket_body='event.ticket_body'
+| eval sensitive_index='event.sensitive_index'
+| eval search='event.search'
+| eval dest_domain='event.dest_domain'
+| eval bytes_out='event.bytes_out'
+| eval token_id='event.token_id'
+| eval registered_agent='event.registered_agent'
+| eval access_path='event.access_path'
+| eval ticket_id='event.ticket_id'
+| eval agent_id='event.agent_id'
+| eval user='event.user'
+| eval host='event.host'
+| eval risk_signal='event.risk_signal'
+| eval has_prompt_injection=if(prompt_injection="true" OR prompt_injection=1 OR like(lower(ticket_body),"%ignore previous instructions%"),1,0)
+| eval has_sensitive_search=if(real_sourcetype="shadowops:splunk_audit" AND (sensitive_index="true" OR sensitive_index=1 OR like(search,"%customer_payments%") OR like(search,"%prod_secrets%")),1,0)
+| eval has_external_egress=if(real_sourcetype="shadowops:proxy" AND NOT like(dest_domain,"%.corp.local") AND bytes_out>10000,1,0)
+| eval has_token=if(isnotnull(token_id),1,0)
+| eval unregistered=if(registered_agent="false" OR registered_agent=0 OR access_path="direct_token",1,0)
+| stats earliest(_time) as first_seen latest(_time) as last_seen values(ticket_id) as ticket_id values(agent_id) as agent_id values(user) as users values(host) as hosts values(search) as searches values(dest_domain) as destinations sum(has_prompt_injection) as prompt_injection_events sum(has_sensitive_search) as sensitive_search_events sum(has_external_egress) as external_egress_events sum(has_token) as token_events max(unregistered) as unregistered_or_direct values(risk_signal) as risk_signals by correlation_id
+| where isnotnull(correlation_id)
+| eval risk_score=0
+| eval risk_score=risk_score + if(unregistered_or_direct=1,20,0)
+| eval risk_score=risk_score + if(sensitive_search_events>0,25,0)
+| eval risk_score=risk_score + if(prompt_injection_events>0,20,0)
+| eval risk_score=risk_score + if(external_egress_events>0,20,0)
+| eval risk_score=risk_score + if(token_events>0,10,0)
+| eval risk_score=risk_score + if(sensitive_search_events>=2,15,0)
+| eval risk_score=if(risk_score>100,100,risk_score)
+| eval severity=case(risk_score>=80,"critical",risk_score>=60,"high",risk_score>=31,"medium",true(),"low")
+| convert ctime(first_seen) ctime(last_seen)
+| table severity risk_score correlation_id first_seen last_seen agent_id users hosts ticket_id destinations prompt_injection_events sensitive_search_events external_egress_events searches risk_signals
+| sort -risk_score
+          ]]></query>
+          <earliest>$time_range.earliest$</earliest>
+          <latest>$time_range.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
   <row>
     <panel>
       <title>Prompt Injection Tickets</title>
       <table>
         <search>
-          <query>index=shadowops sourcetype="shadowops:jira" | eval lower_body=lower(ticket_body) | eval prompt_injection_detected=if(prompt_injection="true" OR like(lower_body,"%ignore previous instructions%") OR like(lower_body,"%send summary to%") OR like(lower_body,"%webhook%"),1,0) | where prompt_injection_detected=1 | table _time ticket_id project user host title ticket_body correlation_id risk_signal | sort _time</query>
+          <query><![CDATA[
+index=shadowops
+| spath
+| eval real_sourcetype='event.sourcetype'
+| search real_sourcetype="shadowops:jira"
+| eval ticket_id='event.ticket_id'
+| eval project='event.project'
+| eval user='event.user'
+| eval host='event.host'
+| eval title='event.title'
+| eval ticket_body='event.ticket_body'
+| eval correlation_id='event.correlation_id'
+| eval risk_signal='event.risk_signal'
+| eval prompt_injection='event.prompt_injection'
+| eval lower_body=lower(ticket_body)
+| eval prompt_injection_detected=if(prompt_injection="true" OR like(lower_body,"%ignore previous instructions%") OR like(lower_body,"%send summary to%") OR like(lower_body,"%webhook%"),1,0)
+| where prompt_injection_detected=1
+| table _time ticket_id project user host title ticket_body correlation_id risk_signal
+| sort _time
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
@@ -86,23 +258,39 @@
       </table>
     </panel>
   </row>
+
   <row>
     <panel>
       <title>MCP Safe Path vs Direct Token Bypass</title>
       <chart>
         <search>
-          <query>index=shadowops (sourcetype="shadowops:mcp_access" OR access_path=*) | eval path=coalesce(access_path,"unknown") | stats count by path</query>
+          <query><![CDATA[
+index=shadowops
+| spath
+| eval real_sourcetype='event.sourcetype'
+| eval access_path='event.access_path'
+| where real_sourcetype="shadowops:mcp_access" OR isnotnull(access_path)
+| eval path=coalesce(access_path,"unknown")
+| stats count by path
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>
         <option name="charting.chart">pie</option>
       </chart>
     </panel>
+
     <panel>
       <title>Risk Signals by Type</title>
       <chart>
         <search>
-          <query>index=shadowops risk_signal=* | stats count by risk_signal | sort -count</query>
+          <query><![CDATA[
+index=shadowops
+| spath path=event.risk_signal output=risk_signal
+| search risk_signal=*
+| stats count by risk_signal
+| sort - count
+          ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
         </search>

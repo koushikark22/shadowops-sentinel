@@ -1,0 +1,40 @@
+{
+  "incident_id": "SHADOWOPS-INC-0001",
+  "correlation_id": "shadowops-demo-chain-001",
+  "detection_name": "Shadow Agent Prompt Injection Exfiltration",
+  "severity": "critical",
+  "risk_score": 94,
+  "risk_contributions": [
+    {
+      "signal": "Prompt injection source ticket",
+      "contribution": 25,
+      "evidence": "Jira ticket body contains prompt-injection instructions"
+    },
+    {
+      "signal": "Direct-token bypass",
+      "contribution": 20,
+      "evidence": "Agent action occurred outside approved MCP path"
+    },
+    {
+      "signal": "Sensitive Splunk search",
+      "contribution": 20,
+      "evidence": "Search touched sensitive Splunk indexes"
+    },
+    {
+      "signal": "External webhook egress",
+      "contribution": 15,
+      "evidence": "Proxy event shows outbound webhook activity"
+    },
+    {
+      "signal": "Unregistered local agent",
+      "contribution": 10,
+      "evidence": "Agent not present in approved registry"
+    },
+    {
+      "signal": "Attack-chain completion bonus",
+      "contribution": 4,
+      "evidence": "Prompt injection, sensitive access, and egress correlated"
+    }
+  ],
+  "explanation": "Critical severity was assigned because the same correlated chain contains prompt injection, unregistered agent activity, sensitive Splunk access, and external data movement."
+}

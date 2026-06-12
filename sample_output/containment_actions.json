@@ -1,0 +1,53 @@
+{
+  "incident_id": "SHADOWOPS-INC-0001",
+  "correlation_id": "shadowops-demo-chain-001",
+  "agent_id": "productivity-copilot-local",
+  "user": "dev.contractor01@corp.local",
+  "severity": "critical",
+  "risk_score": 94,
+  "workflow_type": "simulated_containment",
+  "containment_actions": [
+    {
+      "step": 1,
+      "action": "revoke_agent_token",
+      "target": "token_productivity_copilot_local_001",
+      "status": "completed",
+      "evidence": "Direct-token bypass observed during sensitive Splunk search activity"
+    },
+    {
+      "step": 2,
+      "action": "block_external_webhook",
+      "target": "webhook.site",
+      "status": "completed",
+      "evidence": "External egress detected after sensitive search activity"
+    },
+    {
+      "step": 3,
+      "action": "quarantine_agent",
+      "target": "productivity-copilot-local",
+      "status": "completed",
+      "evidence": "Unregistered local agent associated with prompt-injection chain"
+    },
+    {
+      "step": 4,
+      "action": "create_incident_ticket",
+      "target": "SHADOWOPS-INC-0001",
+      "status": "completed",
+      "evidence": "Critical Shadow Agent Prompt Injection Exfiltration detection generated"
+    },
+    {
+      "step": 5,
+      "action": "export_evidence",
+      "target": "sample_output/incident_evidence.json",
+      "status": "completed",
+      "evidence": "Attack-chain evidence exported for analyst review"
+    },
+    {
+      "step": 6,
+      "action": "generate_analyst_summary",
+      "target": "sample_output/incident_summary.md",
+      "status": "completed",
+      "evidence": "Grounded analyst summary generated from evidence records"
+    }
+  ]
+}

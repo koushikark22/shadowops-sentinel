@@ -1,0 +1,5 @@
+server_id,server_name,owner,environment,auth_mode,approved_clients,known_tools,tool_sensitivity,last_reviewed,descriptor_hash,human_approval_required,status
+mcp-splunk-prod,Splunk MCP Server,secops,prod,oauth,productivity-copilot,search_index|saved_search|create_ticket,high,2026-05-28,sha256:9d3f0f6c1a8a,true,approved
+mcp-jira-prod,Jira MCP Server,platform,prod,oauth,productivity-copilot,read_ticket|update_ticket|create_ticket,medium,2026-05-28,sha256:3a91c0f7d41b,true,approved
+mcp-proxy-prod,Proxy Evidence Server,netsec,prod,service_token,shadowops-detection-engine,lookup_egress|block_domain,high,2026-05-28,sha256:c20f83c9e6d4,true,approved
+mcp-local-shadow,Unregistered Local Agent MCP,unknown,developer-workstation,direct_token,unknown,search_index|post_webhook,critical,unreviewed,sha256:unknown,false,unregistered

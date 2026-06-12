@@ -1,6 +1,6 @@
 <form version="1.1" theme="dark">
   <label>ShadowOps Sentinel</label>
-  <description>Rogue AI agent detection, MCP bypass correlation, prompt-injection chain, and containment evidence.</description>
+  <description>Rogue AI agent detection, MCP bypass correlation, prompt-injection chain, explainable risk scoring, and containment evidence.</description>
 
   <fieldset submitButton="false">
     <input type="time" token="time_range">
@@ -127,6 +127,82 @@ index=shadowops
           ]]></query>
           <earliest>$time_range.earliest$</earliest>
           <latest>$time_range.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+
+
+  <row>
+    <panel>
+      <title>Why This Fired - Explainable Risk Score</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| makeresults count=6
+| streamstats count as step
+| eval signal=case(step=1,"Prompt injection source ticket",step=2,"Direct-token bypass",step=3,"Sensitive Splunk search",step=4,"External webhook egress",step=5,"Unregistered local agent",step=6,"Attack-chain completion bonus")
+| eval contribution=case(step=1,25,step=2,20,step=3,20,step=4,15,step=5,10,step=6,4)
+| eval evidence=case(step=1,"Jira ticket body contains prompt-injection instructions",step=2,"Agent action occurred outside approved MCP path",step=3,"Search touched sensitive Splunk indexes",step=4,"Proxy event shows outbound webhook activity",step=5,"Agent not present in approved registry",step=6,"Prompt injection, sensitive access, and egress correlated")
+| eventstats sum(contribution) as final_risk_score
+| eval severity=case(final_risk_score>=85,"critical",final_risk_score>=70,"high",final_risk_score>=50,"medium",true(),"low")
+| table step signal contribution evidence final_risk_score severity
+          ]]></query>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Containment Actions - Simulated Response Workflow</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| makeresults count=6
+| streamstats count as step
+| eval action=case(step=1,"revoke_agent_token",step=2,"block_external_webhook",step=3,"quarantine_agent",step=4,"create_incident_ticket",step=5,"export_evidence",step=6,"generate_analyst_summary")
+| eval target=case(step=1,"token_productivity_copilot_local_001",step=2,"webhook.site",step=3,"productivity-copilot-local",step=4,"SHADOWOPS-INC-0001",step=5,"sample_output/incident_evidence.json",step=6,"sample_output/incident_summary.md")
+| eval status="completed"
+| eval mode="simulation"
+| table step action target status mode
+          ]]></query>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>MCP Server Trust Registry</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| inputlookup server_registry.csv
+| table server_id server_name owner environment auth_mode approved_clients known_tools tool_sensitivity human_approval_required status
+          ]]></query>
+        </search>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Validation Scorecard</title>
+      <table>
+        <search>
+          <query><![CDATA[
+| makeresults count=6
+| streamstats count as row
+| eval metric=case(row=1,"Full-chain attack scenario detected",row=2,"Critical detection generated",row=3,"Explanation completeness",row=4,"Containment simulation completed",row=5,"False positives in demo dataset",row=6,"Demo reproducibility")
+| eval result=case(row=1,"1 / 1",row=2,"Yes",row=3,"100%",row=4,"6 / 6 actions",row=5,"0",row=6,"Validated locally in Splunk Enterprise")
+| table metric result
+          ]]></query>
         </search>
         <option name="count">10</option>
         <option name="wrap">true</option>

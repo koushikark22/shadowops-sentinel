@@ -1,0 +1,9 @@
+tool_name,data_classification,criticality,approval_required,allowed_roles
+search_index,restricted,critical,true,secops|splunk_admin
+saved_search,internal,medium,false,secops|splunk_admin|developer
+create_ticket,internal,medium,false,secops|platform|developer
+read_ticket,internal,medium,false,secops|platform|developer
+update_ticket,internal,medium,false,secops|platform
+post_webhook,external,critical,true,secops
+block_domain,restricted,critical,true,netsec|secops
+lookup_egress,internal,medium,false,netsec|secops
